@@ -12,7 +12,9 @@ find_package(catkin REQUIRED COMPONENTS
   visualization_msgs
   geometry_msgs
   tf
+  tf_conversions
   eigen_catkin
+  eigen_conversions
 )
 
 ## System dependencies are found with CMake's conventions

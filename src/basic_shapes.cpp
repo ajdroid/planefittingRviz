@@ -2,8 +2,10 @@
 #include <ros/console.h>
 #include <visualization_msgs/Marker.h>
 #include <tf/transform_broadcaster.h>
+#include <tf/transform_datatypes.h>
 #include <tf_conversions/tf_eigen.h>
-#include<Eigen/Dense>
+#include <eigen_conversions/eigen_msg.h>
+#include <Eigen/Dense>
 //#include <rviz_visual_tools/rviz_visual_tools.h>
 
 template<class Vector3>
@@ -35,85 +37,114 @@ if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels
   // rviz visual tools init
   //rviz_visual_tools::RvizVisualToolsPtr visual_tools_;
   //visual_tools_.reset(new rviz_visual_tools::RvizVisualTools("base_frame","/rviz_visual_markers"));
-
+  int num_points = 3;
   ros::init(argc, argv, "basic_shapes");
   ros::NodeHandle n;
   ros::Rate r(1);
-  ros::Publisher marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1);
+  ros::Publisher plane_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1);
+  ros::Publisher points_pub = n.advertise<visualization_msgs::Marker>("point_marker_list", num_points);
 
   // Set our initial shape type to be a cube
-  uint32_t shape = visualization_msgs::Marker::CUBE;
   
-  Eigen::Vector3f u1(0, 0, 1);
-  Eigen::Vector3f u2(1, 0, 0);
-  Eigen::Vector3f u3(0, 1, 0);
-  Eigen::Vector3f pC, pNormal;
-  std::pair<Eigen::Vector3f, Eigen::Vector3f> out;
+  // Set points to use for plane fitting
+  Eigen::Vector3d u1(0, 0, 1);
+  Eigen::Vector3d u2(1, 0, 0);
+  Eigen::Vector3d u3(0, 1, 0);
+  Eigen::Vector3d pC, pNormal;
+  std::pair<Eigen::Vector3d, Eigen::Vector3d> out;
 
-  std::vector<Eigen::Vector3f> points;
+  std::vector<Eigen::Vector3d> points;
   points.push_back(u1);
   points.push_back(u2);
   points.push_back(u3);
   
+  // Fit plane to points
   out = best_plane_from_points(points);
   pC = out.first;
   pNormal = out.second;
-//  Eigen::Quaternionf q(pNormal, u2);
-      ROS_DEBUG_STREAM(u1 << std::endl << u2 << std::endl <<u3 << std::endl );
-      ROS_DEBUG_STREAM(pC << std::endl << pNormal << std::endl) ;
+
+  // Printing normals etc.
+  ROS_DEBUG_STREAM(u1 << std::endl << u2 << std::endl <<u3 << std::endl );
+  ROS_DEBUG_STREAM(pC << std::endl << pNormal << std::endl);
+
   while (ros::ok())
   {
-    visualization_msgs::Marker marker;
+    visualization_msgs::Marker plane_marker, sphere_list;
     // Set the frame ID and timestamp.  See the TF tutorials for information on these.
-    marker.header.frame_id = "/map";
-    marker.header.stamp = ros::Time::now();
+    plane_marker.header.frame_id = "/map";
+    plane_marker.header.stamp = ros::Time::now();
+    sphere_list.header.frame_id= "/map";
+    sphere_list.header.stamp= ros::Time::now();
+
 
     // Set the namespace and id for this marker.  This serves to create a unique ID
     // Any marker sent with the same namespace and id will overwrite the old one
-    marker.ns = "basic_shapes";
-    marker.id = 0;
+    plane_marker.ns = "basic_shapes";
+    plane_marker.id = 0;
+    sphere_list.ns= "basic_shapes";
+    sphere_list.id = 1;
+
 
     // Set the marker type.  Initially this is CUBE, and cycles between that and SPHERE, ARROW, and CYLINDER
-    marker.type = shape;
+    plane_marker.type = visualization_msgs::Marker::CUBE;
+    sphere_list.type = visualization_msgs::Marker::SPHERE_LIST;
 
     // Set the marker action.  Options are ADD, DELETE, and new in ROS Indigo: 3 (DELETEALL)
-    marker.action = visualization_msgs::Marker::ADD;
+    plane_marker.action = visualization_msgs::Marker::ADD;
+    sphere_list.action= visualization_msgs::Marker::ADD;
+    sphere_list.pose.orientation.w= 1.0;
 
-    
- //   tf::Vector3 axis_vector;
-  //  tf::vectorEigenToTF(pNormal, axis_vector);
-   // tf::Vector3 up_vector(0.0, 0.0, 1.0);
-//    tf::Vector3 right_vector = axis_vector.cross(up_vector);
- //   right_vector.normalized();
-  //  tf::Quaternion tfQ;
-   // tfQ.normalize();
-    //geometry_msgs::Quaternion cylinder_orientation;
-//    tf::quaternionTFToMsg(q, cylinder_orientation);
+
+    // convert from axis vector to quaternion    
+    tf::Vector3 axis_vector;
+    tf::vectorEigenToTF(pNormal, axis_vector);
+    tf::Vector3 up_vector(0.0, 0.0, 1.0);
+    tf::Vector3 right_vector = axis_vector.cross(up_vector);
+    right_vector.normalized();
+    tf::Quaternion tfQ(right_vector, -1.0*acos(axis_vector.dot(up_vector)));
+    tfQ.normalize();
+    geometry_msgs::Quaternion cube_orientation;
+    tf::quaternionTFToMsg(tfQ, cube_orientation);
+
     // Set the pose of the marker.  This is a full 6DOF pose relative to the frame/time specified in the header
-    marker.pose.position.x = pC[0];
-    marker.pose.position.y = pC[1];
-    marker.pose.position.z = pC[2];
-    //marker pose.orientation = tfQ;
-    marker.pose.orientation.x = pC[0];
-    marker.pose.orientation.y = pC[1];
-    marker.pose.orientation.z = pC[2];
-    marker.pose.orientation.w = 1.0;
+    plane_marker.pose.position.x = pC[0];
+    plane_marker.pose.position.y = pC[1];
+    plane_marker.pose.position.z = pC[2];
+    
+    plane_marker.pose.orientation = cube_orientation;
 
     // Set the scale of the marker -- 1x1x1 here means 1m on a side
-    marker.scale.x = 1.0;
-    marker.scale.y = 0.0;
-    marker.scale.z = 1.0;
+    plane_marker.scale.x = 1.0;
+    plane_marker.scale.y = 1.0;
+    plane_marker.scale.z = 0.0;
+    // POINTS markers use x and y scale for width/height respectively
+    sphere_list.scale.x = 0.1;
+    sphere_list.scale.y = 0.1;
+    sphere_list.scale.z = 0.1;
 
-    // Set the color -- be sure to set alpha to something non-zero!
-    marker.color.r = 1.0f;
-    marker.color.g = 0.0f;
-    marker.color.b = 0.0f;
-    marker.color.a = 1.0;
+    // Set the color -- opaque red plane, opaque white points
+    plane_marker.color.r = 1.0f;
+    plane_marker.color.g = 0.0f;
+    plane_marker.color.b = 0.0f;
+    plane_marker.color.a = 1.0;
+    sphere_list.color.r = 1.0f;
+    sphere_list.color.g = 1.0f;
+    sphere_list.color.b = 1.0f;
+    sphere_list.color.a = 1.0;
 
-    marker.lifetime = ros::Duration();
+    // Set sphere centres
+    geometry_msgs::Point pt;
+    tf::pointEigenToMsg(u1, pt);
+    sphere_list.points.push_back(pt);
+    tf::pointEigenToMsg(u2, pt);
+    sphere_list.points.push_back(pt);
+    tf::pointEigenToMsg(u3, pt);
+    sphere_list.points.push_back(pt);
+  
+    plane_marker.lifetime = ros::Duration();
 
     // Publish the marker
-    while (marker_pub.getNumSubscribers() < 1)
+    while (plane_pub.getNumSubscribers() < 1)
     {
       if (!ros::ok())
       {
@@ -122,25 +153,9 @@ if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels
       ROS_WARN_ONCE("Please create a subscriber to the marker");
       sleep(1);
     }
-    marker_pub.publish(marker);
+    plane_pub.publish(plane_marker);
+    points_pub.publish(sphere_list);
 
-    /* // Cycle between different shapes
-    switch (shape)
-    {
-    case visualization_msgs::Marker::CUBE:
-      shape = visualization_msgs::Marker::SPHERE;
-      break;
-    case visualization_msgs::Marker::SPHERE:
-      shape = visualization_msgs::Marker::ARROW;
-      break;
-    case visualization_msgs::Marker::ARROW:
-      shape = visualization_msgs::Marker::CYLINDER;
-      break;
-    case visualization_msgs::Marker::CYLINDER:
-      shape = visualization_msgs::Marker::CUBE;
-      break;
-    }
-    */
     r.sleep();
   }
 }
